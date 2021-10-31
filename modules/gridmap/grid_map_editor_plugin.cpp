@@ -44,6 +44,160 @@ void GridMapEditor::_node_removed(Node *p_node) {
 	}
 }
 
+void GridMapEditor::forward_spatial_draw_over_viewport(Control *p_overlay) {
+	Vector2 cell_size = Vector2(50, 50);
+	Vector3 edited_floor = node->has_meta("_editor_floor_") ? node->get_meta("_editor_floor_") : Variant();
+
+	for (int i = 0; i < 3; i++) {
+		if (VS::get_singleton()->mesh_get_surface_count(grid[i]) > 0) {
+			VS::get_singleton()->mesh_remove_surface(grid[i], 0);
+		}
+		edit_floor[i] = edited_floor[i];
+	}
+	auto get_tile_shape_polygon = [=]() {Vector<Vector3> points;
+	float overlap = 0.25;
+	points.push_back(Vector3(0.5, 1.0, 0.0));
+	points.push_back(Vector3(0.0, 1.0, overlap));
+	points.push_back(Vector3(0.0, 1.0, 1.0 - overlap));
+	points.push_back(Vector3(0.5, 1.0, 1.0));
+	points.push_back(Vector3(1.0, 1.0, 1.0 - overlap));
+	points.push_back(Vector3(1.0, 1.0, overlap));
+	points.push_back(Vector3(0.5, 1.0, 0.0));
+
+	for (int i = 0; i < points.size(); i++) {
+		points.write[i] = points[i] * node->get_cell_size() - node->get_cell_size() / 2;
+	}
+	return points;};
+	Ref<Texture> text = Ref<Texture>();
+	Vector<Vector3> grid_points[3];
+	Vector<Color> grid_colors[3];
+	for (int i = 0; i < 3; i++) {
+		if (node->get_cell_shape() == GridMap::SQUARE) {
+
+			Vector3 axis;
+			axis[i] = 1;
+			Vector3 axis_n1;
+			axis_n1[(i + 1) % 3] = cell_size[(i + 1) % 3];
+			Vector3 axis_n2;
+			axis_n2[(i + 2) % 3] = cell_size[(i + 2) % 3];
+
+			for (int j = -GRID_CURSOR_SIZE; j <= GRID_CURSOR_SIZE; j++) {
+				for (int k = -GRID_CURSOR_SIZE; k <= GRID_CURSOR_SIZE; k++) {
+					Vector3 p = axis_n1 * j + axis_n2 * k;
+					float trans = Math::pow(MAX(0, 1.0 - (Vector2(j, k).length() / GRID_CURSOR_SIZE)), 2);
+
+					Vector3 pj = axis_n1 * (j + 1) + axis_n2 * k;
+					float transj = Math::pow(MAX(0, 1.0 - (Vector2(j + 1, k).length() / GRID_CURSOR_SIZE)), 2);
+
+					Vector3 pk = axis_n1 * j + axis_n2 * (k + 1);
+					float transk = Math::pow(MAX(0, 1.0 - (Vector2(j, k + 1).length() / GRID_CURSOR_SIZE)), 2);
+
+					grid_points[i].push_back(p);
+					grid_points[i].push_back(pk);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(p);
+					grid_points[i].push_back(pj);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));
+
+				}
+			}
+		}
+		else {
+			for (int j = -GRID_CURSOR_SIZE; j <= GRID_CURSOR_SIZE; j++) {
+				for (int k = -GRID_CURSOR_SIZE; k <= GRID_CURSOR_SIZE; k++) {
+					float trans = Math::pow(MAX(0, 1.0 - (Vector2(j, k).length() / GRID_CURSOR_SIZE)), 2);
+					float transj = Math::pow(MAX(0, 1.0 - (Vector2(j + 1, k).length() / GRID_CURSOR_SIZE)), 2);
+					float transk = Math::pow(MAX(0, 1.0 - (Vector2(j, k + 1).length() / GRID_CURSOR_SIZE)), 2);
+
+					Vector3 node_pos = node->get_global_transform().origin;
+					Vector3 ofs = node->map_to_world(j, 0, k);
+
+					Vector<Vector3> uvs = get_tile_shape_polygon();
+					for (int l = 0; l < uvs.size(); l++) {
+						uvs.write[i] = (uvs[l] + node->get_cell_size() / 2) / node->get_cell_size() + ofs;
+					}
+
+					Vector<Color> colors;
+					colors.resize(uvs.size());
+
+					for (int z = 0; z < uvs.size(); z++)
+						colors.write[z] = Color(1.0, 1.0, 1.0, 1.0);
+
+					Array a;
+					tile_lines_mesh->clear_surfaces();
+					a.clear();
+					a.resize(Mesh::ARRAY_MAX);
+					// Add the first point again when drawing lines.
+					uvs.push_back(uvs[0]);
+					colors.push_back(colors[0]);
+					a[Mesh::ARRAY_VERTEX] = uvs;
+					a[Mesh::ARRAY_COLOR] = colors;
+
+
+
+					//grid_points->append_array(uvs);
+
+					//for (int z = 0; z < uvs.size(); z++) {
+						//grid_points[i].push_back(uvs[z] /** node->get_cell_size() - node->get_cell_size() / 2*/ + ofs);
+						//grid_colors[i].push_back(Color(1, 1, 1, transk));
+						//colors.push_back(Color(1.0, 1.0, 1.0, 1.0));
+					//}
+
+
+
+					tile_lines_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINE_STRIP, a, Array(), Mesh::ARRAY_FLAG_USE_2D_VERTICES);
+
+					p_overlay->draw_mesh(tile_lines_mesh, text, text);
+
+					/*grid_points[i].push_back(Vector3{ 0, 0, -cell_size.z } + ofs);
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));
+
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ 0, 0, cell_size.z } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(Vectr3{ -cell_size.x / 2 , 0, cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(or3{ 0, 0, cell_size.z } + ofs);
+					grid_points[i].push_back(Vecto1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));
+
+
+					grid_points[i].push_back(Vector3{ -cell_size.x / 2 , 0, cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ -cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(Vector3{ -cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ 0, 0, -cell_size.z } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));*/
+				}
+			}
+		}
+
+		/*Array d;
+		d.resize(VS::ARRAY_MAX);
+		d[VS::ARRAY_VERTEX] = grid_points[i];
+		d[VS::ARRAY_COLOR] = grid_colors[i];
+		VisualServer::get_singleton()->mesh_add_surface_from_arrays(grid[i], VisualServer::PRIMITIVE_LINES, d, Array(), VisualServer::ARRAY_FLAG_USE_2D_VERTICES);
+		VisualServer::get_singleton()->mesh_surface_set_material(grid[i], 0, indicator_mat->get_rid());*/
+		//draw_mesh(tile_lines_mesh, Ref<Texture>(), nullptr);
+		//VisualServer::get_singleton()->mesh_add_surface_from_arrays()
+	}
+}
+
 void GridMapEditor::_configure() {
 	if (!node) {
 		return;
@@ -117,7 +271,12 @@ void GridMapEditor::_menu_option(int p_option) {
 			}
 
 			r.set_orthogonal_index(cursor_rot);
-			r.rotate(Vector3(0, 1, 0), -Math_PI / 2.0);
+			if (node->get_cell_shape() == GridMap::SQUARE) {
+				//r.rotate(Vector3(0, 1, 0), -Math_PI / 2.0);
+			}
+			else {
+				r.rotate(Vector3(0, 1, 0), -Math_PI / 3.0);
+			}
 			cursor_rot = r.get_orthogonal_index();
 			_update_cursor_transform();
 		} break;
@@ -386,24 +545,36 @@ bool GridMapEditor::do_input_action(Camera *p_camera, const Point2 &p_point, boo
 	}
 
 	int cell[3];
-	float cell_size[3] = { node->get_cell_size().x, node->get_cell_size().y, node->get_cell_size().z };
-
-	for (int i = 0; i < 3; i++) {
-		if (i == edit_axis) {
-			cell[i] = edit_floor[i];
-		} else {
-			cell[i] = inters[i] / node->get_cell_size()[i];
-			if (inters[i] < 0) {
-				cell[i] -= 1; // Compensate negative.
+	Vector3 cell_size = node->get_cell_size();
+	
+	if (node->get_cell_shape() == GridMap::SQUARE)
+	{
+		for (int i = 0; i < 3; i++) {
+			if (i == edit_axis) {
+				cell[i] = edit_floor[i];
 			}
-			grid_ofs[i] = cell[i] * cell_size[i];
+			else {
+				cell[i] = inters[i] / node->get_cell_size()[i];
+				if (inters[i] < 0) {
+					cell[i] -= 1; // Compensate negative.
+				}
+				grid_ofs[i] = cell[i] * cell_size[i];
+			}
 		}
 	}
+	else {
+		Vector3 map_pos = node->world_to_map(inters);
+		cell[0] = map_pos.x;
+		cell[1] = map_pos.y;
+		cell[2] = map_pos.z;
+	}
 
+	
 	VS::get_singleton()->instance_set_transform(grid_instance[edit_axis], node->get_global_transform() * edit_grid_xform);
 
 	if (cursor_instance.is_valid()) {
-		cursor_origin = (Vector3(cell[0], cell[1], cell[2]) + Vector3(0.5 * node->get_center_x(), 0.5 * node->get_center_y(), 0.5 * node->get_center_z())) * node->get_cell_size();
+		
+		cursor_origin = node->map_to_world(cell[0], cell[1], cell[2]);
 		cursor_visible = true;
 
 		if (input_action == INPUT_SELECT || input_action == INPUT_PASTE) {
@@ -905,6 +1076,7 @@ void GridMapEditor::update_palette() {
 void GridMapEditor::edit(GridMap *p_gridmap) {
 	if (!p_gridmap && node) {
 		node->disconnect("cell_size_changed", this, "_draw_grids");
+		node->disconnect("settings_changed", this, "_draw_grids");
 	}
 
 	node = p_gridmap;
@@ -940,6 +1112,7 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 	_update_clip();
 
 	node->connect("cell_size_changed", this, "_draw_grids");
+	node->connect("settings_changed", this, "_draw_grids", varray(node->get_cell_size()));
 }
 
 void GridMapEditor::_update_clip() {
@@ -968,56 +1141,156 @@ void GridMapEditor::update_grid() {
 	updating = false;
 }
 
-void GridMapEditor::_draw_grids(const Vector3 &cell_size) {
+void GridMapEditor::_draw_grids(const Vector3& cell_size) {
 	Vector3 edited_floor = node->has_meta("_editor_floor_") ? node->get_meta("_editor_floor_") : Variant();
-
+	return;
 	for (int i = 0; i < 3; i++) {
 		if (VS::get_singleton()->mesh_get_surface_count(grid[i]) > 0) {
 			VS::get_singleton()->mesh_remove_surface(grid[i], 0);
 		}
 		edit_floor[i] = edited_floor[i];
 	}
+	auto get_tile_shape_polygon = [=]() {Vector<Vector3> points;
+	float overlap = 0.25;
+	points.push_back(Vector3(0.5, 1.0, 0.0));
+	points.push_back(Vector3(0.0, 1.0, overlap));
+	points.push_back(Vector3(0.0, 1.0, 1.0 - overlap));
+	points.push_back(Vector3(0.5, 1.0, 1.0));
+	points.push_back(Vector3(1.0, 1.0, 1.0 - overlap));
+	points.push_back(Vector3(1.0, 1.0, overlap));
+	points.push_back(Vector3(0.5, 1.0, 0.0));
 
+	for (int i = 0; i < points.size(); i++) {
+		points.write[i] = points[i] * node->get_cell_size() - node->get_cell_size() / 2;
+	}
+	return points;};
+	Ref<Texture> text = Ref<Texture>();
 	Vector<Vector3> grid_points[3];
 	Vector<Color> grid_colors[3];
-
 	for (int i = 0; i < 3; i++) {
-		Vector3 axis;
-		axis[i] = 1;
-		Vector3 axis_n1;
-		axis_n1[(i + 1) % 3] = cell_size[(i + 1) % 3];
-		Vector3 axis_n2;
-		axis_n2[(i + 2) % 3] = cell_size[(i + 2) % 3];
+		if (node->get_cell_shape() == GridMap::SQUARE) {
 
-		for (int j = -GRID_CURSOR_SIZE; j <= GRID_CURSOR_SIZE; j++) {
-			for (int k = -GRID_CURSOR_SIZE; k <= GRID_CURSOR_SIZE; k++) {
-				Vector3 p = axis_n1 * j + axis_n2 * k;
-				float trans = Math::pow(MAX(0, 1.0 - (Vector2(j, k).length() / GRID_CURSOR_SIZE)), 2);
+			Vector3 axis;
+			axis[i] = 1;
+			Vector3 axis_n1;
+			axis_n1[(i + 1) % 3] = cell_size[(i + 1) % 3];
+			Vector3 axis_n2;
+			axis_n2[(i + 2) % 3] = cell_size[(i + 2) % 3];
 
-				Vector3 pj = axis_n1 * (j + 1) + axis_n2 * k;
-				float transj = Math::pow(MAX(0, 1.0 - (Vector2(j + 1, k).length() / GRID_CURSOR_SIZE)), 2);
+			for (int j = -GRID_CURSOR_SIZE; j <= GRID_CURSOR_SIZE; j++) {
+				for (int k = -GRID_CURSOR_SIZE; k <= GRID_CURSOR_SIZE; k++) {
+					Vector3 p = axis_n1 * j + axis_n2 * k;
+					float trans = Math::pow(MAX(0, 1.0 - (Vector2(j, k).length() / GRID_CURSOR_SIZE)), 2);
 
-				Vector3 pk = axis_n1 * j + axis_n2 * (k + 1);
-				float transk = Math::pow(MAX(0, 1.0 - (Vector2(j, k + 1).length() / GRID_CURSOR_SIZE)), 2);
+					Vector3 pj = axis_n1 * (j + 1) + axis_n2 * k;
+					float transj = Math::pow(MAX(0, 1.0 - (Vector2(j + 1, k).length() / GRID_CURSOR_SIZE)), 2);
 
-				grid_points[i].push_back(p);
-				grid_points[i].push_back(pk);
-				grid_colors[i].push_back(Color(1, 1, 1, trans));
-				grid_colors[i].push_back(Color(1, 1, 1, transk));
+					Vector3 pk = axis_n1 * j + axis_n2 * (k + 1);
+					float transk = Math::pow(MAX(0, 1.0 - (Vector2(j, k + 1).length() / GRID_CURSOR_SIZE)), 2);
 
-				grid_points[i].push_back(p);
-				grid_points[i].push_back(pj);
-				grid_colors[i].push_back(Color(1, 1, 1, trans));
-				grid_colors[i].push_back(Color(1, 1, 1, transj));
+					grid_points[i].push_back(p);
+					grid_points[i].push_back(pk);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(p);
+					grid_points[i].push_back(pj);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));
+
+				}
+			}
+		}
+		else {
+			for (int j = -GRID_CURSOR_SIZE; j <= GRID_CURSOR_SIZE; j++) {
+				for (int k = -GRID_CURSOR_SIZE; k <= GRID_CURSOR_SIZE; k++) {
+					float trans = Math::pow(MAX(0, 1.0 - (Vector2(j, k).length() / GRID_CURSOR_SIZE)), 2);
+					float transj = Math::pow(MAX(0, 1.0 - (Vector2(j + 1, k).length() / GRID_CURSOR_SIZE)), 2);
+					float transk = Math::pow(MAX(0, 1.0 - (Vector2(j, k + 1).length() / GRID_CURSOR_SIZE)), 2);
+
+					Vector3 node_pos = node->get_global_transform().origin;
+					Vector3 ofs = node->map_to_world(j, 0, k);
+
+					Vector<Vector3> uvs = get_tile_shape_polygon();
+					for (int l = 0; l < uvs.size(); l++) {
+						uvs.write[i] = (uvs[l] + node->get_cell_size() / 2) / node->get_cell_size() + ofs;
+					}
+					
+					Vector<Color> colors;
+					colors.resize(uvs.size());
+
+					for (int z = 0; z < uvs.size(); z++) 
+						colors.push_back(Color(1.0, 1.0, 1.0, 1.0));
+					
+					Array a;
+					tile_lines_mesh->clear_surfaces();
+					a.clear();
+					a.resize(Mesh::ARRAY_MAX);
+					// Add the first point again when drawing lines.
+					uvs.push_back(uvs[0]);
+					colors.push_back(colors[0]);
+					a[Mesh::ARRAY_VERTEX] = uvs;
+					a[Mesh::ARRAY_COLOR] = colors;
+
+				
+
+					//grid_points->append_array(uvs);
+					
+					//for (int z = 0; z < uvs.size(); z++) {
+						//grid_points[i].push_back(uvs[z] /** node->get_cell_size() - node->get_cell_size() / 2*/ + ofs);
+						//grid_colors[i].push_back(Color(1, 1, 1, transk));
+						//colors.push_back(Color(1.0, 1.0, 1.0, 1.0));
+					//}
+
+	
+
+					tile_lines_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINE_STRIP, a, Array(), Mesh::ARRAY_FLAG_USE_2D_VERTICES);
+					
+					//draw_mesh(tile_lines_mesh, text, text);
+
+					/*grid_points[i].push_back(Vector3{ 0, 0, -cell_size.z } + ofs);
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));
+
+					grid_points[i].push_back(Vector3{ cell_size.x / 2, 0, cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ 0, 0, cell_size.z } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(Vectr3{ -cell_size.x / 2 , 0, cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(or3{ 0, 0, cell_size.z } + ofs);
+					grid_points[i].push_back(Vecto1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));
+
+
+					grid_points[i].push_back(Vector3{ -cell_size.x / 2 , 0, cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ -cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transk));
+
+					grid_points[i].push_back(Vector3{ -cell_size.x / 2, 0, -cell_size.z / 2 } + ofs);
+					grid_points[i].push_back(Vector3{ 0, 0, -cell_size.z } + ofs);
+					grid_colors[i].push_back(Color(1, 1, 1, trans));
+					grid_colors[i].push_back(Color(1, 1, 1, transj));*/
+				}
 			}
 		}
 
-		Array d;
+		/*Array d;
 		d.resize(VS::ARRAY_MAX);
 		d[VS::ARRAY_VERTEX] = grid_points[i];
 		d[VS::ARRAY_COLOR] = grid_colors[i];
-		VisualServer::get_singleton()->mesh_add_surface_from_arrays(grid[i], VisualServer::PRIMITIVE_LINES, d);
-		VisualServer::get_singleton()->mesh_surface_set_material(grid[i], 0, indicator_mat->get_rid());
+		VisualServer::get_singleton()->mesh_add_surface_from_arrays(grid[i], VisualServer::PRIMITIVE_LINES, d, Array(), VisualServer::ARRAY_FLAG_USE_2D_VERTICES);
+		VisualServer::get_singleton()->mesh_surface_set_material(grid[i], 0, indicator_mat->get_rid());*/
+		//draw_mesh(tile_lines_mesh, Ref<Texture>(), nullptr);
+		//VisualServer::get_singleton()->mesh_add_surface_from_arrays()
 	}
 }
 
@@ -1448,6 +1721,8 @@ GridMapEditor::GridMapEditor(EditorNode *p_editor) {
 	indicator_mat->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
 	indicator_mat->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
 	indicator_mat->set_albedo(Color(0.8, 0.5, 0.1));
+
+	tile_lines_mesh.instance();
 }
 
 GridMapEditor::~GridMapEditor() {
@@ -1493,6 +1768,10 @@ void GridMapEditorPlugin::_notification(int p_what) {
 			} break;
 		}
 	}
+}
+
+void GridMapEditorPlugin::forward_spatial_draw_over_viewport(Control *p_overlay) {
+	grid_map_editor->forward_spatial_draw_over_viewport(p_overlay);
 }
 
 void GridMapEditorPlugin::edit(Object *p_object) {

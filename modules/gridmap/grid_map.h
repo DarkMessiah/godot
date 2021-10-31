@@ -41,6 +41,19 @@
 
 class GridMap : public Spatial {
 	GDCLASS(GridMap, Spatial);
+public:
+	enum CellShape {
+		SQUARE = 0,
+		HEXAGON
+	};
+
+	enum CellLayout {
+		ODD_R,
+		EVEN_R,
+		ODD_Q,
+		EVEN_Q
+	};
+private:
 
 	enum {
 		MAP_DIRTY_TRANSFORMS = 1,
@@ -141,6 +154,8 @@ class GridMap : public Spatial {
 	bool center_x, center_y, center_z;
 	float cell_scale;
 	Navigation *navigation;
+	CellShape cell_shape;
+	CellLayout cell_layout;
 
 	bool clip;
 	bool clip_above;
@@ -183,8 +198,6 @@ class GridMap : public Spatial {
 	void resource_changed(const RES &p_res);
 
 	void _clear_internal();
-
-	Vector3 _get_offset() const;
 
 	struct BakedMesh {
 		Ref<Mesh> mesh;
@@ -238,6 +251,12 @@ public:
 	void set_center_z(bool p_enable);
 	bool get_center_z() const;
 
+	void set_cell_shape(CellShape p_shape);
+	CellShape get_cell_shape() const;
+
+	void set_cell_layout(CellLayout p_shape);
+	CellLayout get_cell_layout() const;
+
 	void set_cell_item(int p_x, int p_y, int p_z, int p_item, int p_rot = 0);
 	int get_cell_item(int p_x, int p_y, int p_z) const;
 	int get_cell_item_orientation(int p_x, int p_y, int p_z) const;
@@ -251,6 +270,8 @@ public:
 	float get_cell_scale() const;
 
 	Array get_used_cells() const;
+
+	Vector3 _get_offset() const;
 
 	Array get_meshes();
 
@@ -266,4 +287,6 @@ public:
 	~GridMap();
 };
 
+VARIANT_ENUM_CAST(GridMap::CellShape);
+VARIANT_ENUM_CAST(GridMap::CellLayout);
 #endif // GRID_MAP_H

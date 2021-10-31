@@ -360,19 +360,56 @@ int GridMap::get_cell_item_orientation(int p_x, int p_y, int p_z) const {
 }
 
 Vector3 GridMap::world_to_map(const Vector3 &p_world_pos) const {
-	Vector3 map_pos = p_world_pos / cell_size;
-	map_pos.x = floor(map_pos.x);
-	map_pos.y = floor(map_pos.y);
-	map_pos.z = floor(map_pos.z);
+	Vector3 map_pos;
+	if (cell_shape == SQUARE) {
+		map_pos = (p_world_pos / cell_size).floor();
+	}
+	else {
+		auto cube_to_oddr = [=](Vector3 p_cube) {
+			float col = p_cube.x + (p_cube.z - (int(p_cube.z) & 1)) / 2.0;
+			float row = p_cube.z;
+			return Vector3(col, p_world_pos.y / cell_size.y, row);
+		};
+		auto cube_round = [](Vector3 p_cube) {
+			Vector3 r = p_cube.round();
+			Vector3 diff = (r - p_cube).abs();
+
+			if (diff.x > diff.y && diff.x > diff.z) {
+				r.x = -r.y - r.z;
+			}
+			else if (diff.y > diff.z) {
+				r.y = -r.x - r.z;
+			}
+			else {
+				r.z = -r.x - r.y;
+			}
+
+			return r;
+		};
+
+		float q = (Math::sqrt(3.0) / 3.0 * p_world_pos.x - 1.0 / 3.0 * p_world_pos.z) / cell_size.z;
+		float r = (2.0 / 3.0 * p_world_pos.z) / cell_size.z;
+		return cube_to_oddr(cube_round(Vector3(q, -q - r, r)));
+	}
+
 	return map_pos;
 }
 
 Vector3 GridMap::map_to_world(int p_x, int p_y, int p_z) const {
+	Vector3 world_pos;
+	Vector3 map_pos = { float(p_x), float(p_y), float(p_z) };
 	Vector3 offset = _get_offset();
-	Vector3 world_pos(
-			p_x * cell_size.x + offset.x,
-			p_y * cell_size.y + offset.y,
-			p_z * cell_size.z + offset.z);
+	if (cell_shape == SQUARE) {
+		world_pos = map_pos * cell_size + offset;
+	}
+	else {
+		auto oddr_offset_to_pixel = [=](Vector3 p_pos) {
+			float x = cell_size.z * Math::sqrt(3.0) * (p_pos.x + 0.5 * (int(p_pos.z) & 1));
+			float y = cell_size.z * 1.5 * p_pos.z;
+			return Vector3(x, p_y * cell_size.y, y);
+		};
+		world_pos = oddr_offset_to_pixel(map_pos) + offset;
+	}
 	return world_pos;
 }
 
@@ -451,7 +488,7 @@ bool GridMap::_octant_update(const OctantKey &p_key) {
 		Transform xform;
 
 		xform.basis.set_orthogonal_index(c.rot);
-		xform.set_origin(cellpos * cell_size + ofs);
+		xform.set_origin(map_to_world(cellpos.x, cellpos.y, cellpos.z));
 		xform.basis.scale(Vector3(cell_scale, cell_scale, cell_scale));
 		if (baked_meshes.size() == 0) {
 			if (mesh_library->get_item_mesh(c.item).is_valid()) {
@@ -785,6 +822,25 @@ void GridMap::_update_octants_callback() {
 	awaiting_update = false;
 }
 
+void GridMap::set_cell_shape(CellShape p_shape) {
+	cell_shape = p_shape;
+	_recreate_octant_data();
+	emit_signal("settings_changed");
+}
+
+GridMap::CellShape GridMap::get_cell_shape() const {
+	return cell_shape;
+}
+
+void GridMap::set_cell_layout(CellLayout p_layout) {
+	cell_layout = p_layout;
+	_recreate_octant_data();
+	emit_signal("settings_changed");
+}
+GridMap::CellLayout GridMap::get_cell_layout() const {
+	return cell_layout;
+}
+
 void GridMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_collision_layer", "layer"), &GridMap::set_collision_layer);
 	ClassDB::bind_method(D_METHOD("get_collision_layer"), &GridMap::get_collision_layer);
@@ -827,6 +883,12 @@ void GridMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_center_z", "enable"), &GridMap::set_center_z);
 	ClassDB::bind_method(D_METHOD("get_center_z"), &GridMap::get_center_z);
 
+	ClassDB::bind_method(D_METHOD("set_cell_shape", "shape"), &GridMap::set_cell_shape);
+	ClassDB::bind_method(D_METHOD("get_cell_shape"), &GridMap::get_cell_shape);
+
+	ClassDB::bind_method(D_METHOD("set_cell_layout", "layout"), &GridMap::set_cell_layout);
+	ClassDB::bind_method(D_METHOD("get_cell_layout"), &GridMap::get_cell_layout);
+
 	ClassDB::bind_method(D_METHOD("set_clip", "enabled", "clipabove", "floor", "axis"), &GridMap::set_clip, DEFVAL(true), DEFVAL(0), DEFVAL(Vector3::AXIS_X));
 
 	ClassDB::bind_method(D_METHOD("clear"), &GridMap::clear);
@@ -846,6 +908,8 @@ void GridMap::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "mesh_library", PROPERTY_HINT_RESOURCE_TYPE, "MeshLibrary"), "set_mesh_library", "get_mesh_library");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_in_baked_light"), "set_use_in_baked_light", "get_use_in_baked_light");
 	ADD_GROUP("Cell", "cell_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "cell_shape", PROPERTY_HINT_ENUM, "SQUARE,HEXAGON"), "set_cell_shape", "get_cell_shape");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "cell_layout", PROPERTY_HINT_ENUM, "ODD_R,EVEN_R,ODD_Q,EVEN_Q"), "set_cell_layout", "get_cell_layout");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "cell_size"), "set_cell_size", "get_cell_size");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "cell_octant_size", PROPERTY_HINT_RANGE, "1,1024,1"), "set_octant_size", "get_octant_size");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "cell_center_x"), "set_center_x", "get_center_x");
@@ -859,6 +923,7 @@ void GridMap::_bind_methods() {
 	BIND_CONSTANT(INVALID_CELL_ITEM);
 
 	ADD_SIGNAL(MethodInfo("cell_size_changed", PropertyInfo(Variant::VECTOR3, "cell_size")));
+	ADD_SIGNAL(MethodInfo("settings_changed"));
 }
 
 void GridMap::set_clip(bool p_enabled, bool p_clip_above, int p_floor, Vector3::Axis p_axis) {
@@ -930,7 +995,7 @@ Array GridMap::get_meshes() {
 
 		xform.basis.set_orthogonal_index(E->get().rot);
 
-		xform.set_origin(cellpos * cell_size + ofs);
+		xform.set_origin(map_to_world(cellpos.x, cellpos.y, cellpos.z));
 		xform.basis.scale(Vector3(cell_scale, cell_scale, cell_scale));
 
 		meshes.push_back(xform);
@@ -941,6 +1006,7 @@ Array GridMap::get_meshes() {
 }
 
 Vector3 GridMap::_get_offset() const {
+
 	return Vector3(
 			cell_size.x * 0.5 * int(center_x),
 			cell_size.y * 0.5 * int(center_y),
@@ -983,7 +1049,7 @@ void GridMap::make_baked_meshes(bool p_gen_lightmap_uv, float p_lightmap_uv_texe
 		Transform xform;
 
 		xform.basis.set_orthogonal_index(E->get().rot);
-		xform.set_origin(cellpos * cell_size + ofs);
+		xform.set_origin(map_to_world(cellpos.x, cellpos.y, cellpos.z));
 		xform.basis.scale(Vector3(cell_scale, cell_scale, cell_scale));
 
 		OctantKey ok;
@@ -1063,6 +1129,8 @@ RID GridMap::get_bake_mesh_instance(int p_idx) {
 	ERR_FAIL_INDEX_V(p_idx, baked_meshes.size(), RID());
 	return baked_meshes[p_idx].instance;
 }
+
+
 
 GridMap::GridMap() {
 	collision_layer = 1;

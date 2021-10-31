@@ -68,6 +68,8 @@ class GridMapEditor : public VBoxContainer {
 		DISPLAY_LIST
 	};
 
+	Ref<ArrayMesh> tile_lines_mesh;
+
 	UndoRedo *undo_redo;
 	InputAction input_action;
 	Panel *panel;
@@ -197,6 +199,7 @@ class GridMapEditor : public VBoxContainer {
 
 	EditorNode *editor;
 
+
 	void update_grid(); // Change which and where the grid is displayed
 	void _draw_grids(const Vector3 &cell_size);
 	void _configure();
@@ -235,6 +238,7 @@ class GridMapEditor : public VBoxContainer {
 protected:
 	void _notification(int p_what);
 	void _node_removed(Node *p_node);
+	void forward_spatial_draw_over_viewport(Control* p_overlay);
 	static void _bind_methods();
 
 public:
@@ -257,6 +261,7 @@ protected:
 
 public:
 	virtual bool forward_spatial_gui_input(Camera *p_camera, const Ref<InputEvent> &p_event) { return grid_map_editor->forward_spatial_input_event(p_camera, p_event); }
+	void forward_spatial_draw_over_viewport(Control *p_overlay) override;
 	virtual String get_name() const { return "GridMap"; }
 	bool has_main_screen() const { return false; }
 	virtual void edit(Object *p_object);
